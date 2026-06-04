@@ -17,7 +17,7 @@ from n8n_client import DB_PATH, LISTINGS_TABLE, get_conn
 load_dotenv()
 
 TEST_MODE   = True
-TEST_PHONE  = "917893155067"
+TEST_PHONE  = "9**89315****"
 MAX_PER_RUN = 10
 DUBAI_TZ    = pytz.timezone("Asia/Dubai")
 
