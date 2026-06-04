@@ -1,0 +1,150 @@
+{
+  "name": "Workflow 3 - Follow-up Scheduler",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 12 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every 12 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "listings",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            { "keyName": "status", "condition": "eq", "keyValue": "messaged" }
+          ]
+        }
+      },
+      "id": "get-pending",
+      "name": "Get Pending Follow-ups",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst MAX_FOLLOWUPS = 3;\nconst HOURS_BETWEEN = 12;\nconst now = new Date();\n\nconst needs = items.filter(item => {\n  const d = item.json;\n  if ((d.follow_up_count || 0) >= MAX_FOLLOWUPS) return false;\n  if (!d.phone) return false;\n  const last = d.last_followup || d.created_at;\n  if (!last) return false;\n  const hrs = (now - new Date(last)) / 3600000;\n  return hrs >= HOURS_BETWEEN;\n});\n\nconsole.log(`Needs followup: ${needs.length}/${items.length}`);\nreturn needs;"
+      },
+      "id": "check-timing",
+      "name": "Check Timing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.phone }}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "has-phone",
+      "name": "Has Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gate.whapi.cloud/messages/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer REPLACE_WITH_WHAPI_TOKEN" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to", "value": "={{ $json.phone }}@s.whatsapp.net" },
+            { "name": "body", "value": "=Hi, just following up \u2014 is your {{ $json.name }} still available for sale?" }
+          ]
+        }
+      },
+      "id": "send-followup",
+      "name": "Send Follow-up",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "const item = $input.first().json;\nconst newCount = (item.follow_up_count || 0) + 1;\nconst newStatus = newCount >= 3 ? 'expired' : 'messaged';\nreturn [{\n  json: {\n    ...item,\n    follow_up_count: newCount,\n    status: newStatus,\n    last_followup: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "increment-count",
+      "name": "Increment Count",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1340, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "listings",
+        "filters": {
+          "conditions": [
+            { "keyName": "listing_id", "condition": "eq", "keyValue": "={{ $json.listing_id }}" }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "follow_up_count", "fieldValue": "={{ $json.follow_up_count }}" },
+            { "fieldId": "status", "fieldValue": "={{ $json.status }}" },
+            { "fieldId": "last_followup", "fieldValue": "={{ $json.last_followup }}" }
+          ]
+        }
+      },
+      "id": "update-followup",
+      "name": "Update Follow-up",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [1560, 200]
+    }
+  ],
+  "connections": {
+    "Every 12 Hours": {
+      "main": [[{ "node": "Get Pending Follow-ups", "type": "main", "index": 0 }]]
+    },
+    "Get Pending Follow-ups": {
+      "main": [[{ "node": "Check Timing", "type": "main", "index": 0 }]]
+    },
+    "Check Timing": {
+      "main": [[{ "node": "Has Phone?", "type": "main", "index": 0 }]]
+    },
+    "Has Phone?": {
+      "main": [
+        [{ "node": "Send Follow-up", "type": "main", "index": 0 }],
+        []
+      ]
+    },
+    "Send Follow-up": {
+      "main": [[{ "node": "Increment Count", "type": "main", "index": 0 }]]
+    },
+    "Increment Count": {
+      "main": [[{ "node": "Update Follow-up", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Dubai",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
