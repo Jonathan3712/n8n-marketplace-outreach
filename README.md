@@ -20,7 +20,7 @@ A client in Dubai needed a hands-free system to reach individual sellers on Dubi
 **Live test result:**
 ```
 Listing:   1960 Corvette in excellent condition for sale
-Phone:     +971506504508 (extracted via JavaScript DOM)
+Phone:     +9**50650**** (extracted via JavaScript DOM)
 AI clean:  "Corvette"
 Message:   "Hi, is your Corvette still available for sale?"
 Status:    Confirmed received ✅
