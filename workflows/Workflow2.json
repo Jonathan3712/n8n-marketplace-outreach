@@ -1,0 +1,207 @@
+{
+  "name": "Workflow 2 - Reply Handler",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "messages",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Whapi Reply Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [240, 300],
+      "webhookId": "messages"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json;\nconst phone = (body.from || '').replace('@s.whatsapp.net','');\nconst message = body.body || body.text || '';\nconst lower = message.toLowerCase();\n\nlet replyType = 'unknown';\nif (lower.includes('yes') || lower.includes('available') || lower.includes('yeah')) {\n  replyType = 'yes';\n} else if (lower.includes('no') || lower.includes('sold') || lower.includes('not available')) {\n  replyType = 'no';\n}\n\nconsole.log(`Reply from ${phone}: ${replyType}`);\nreturn [{ json: { phone, message, replyType } }];"
+      },
+      "id": "parse-reply",
+      "name": "Parse Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "mode": "rules",
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.replyType }}",
+                    "rightValue": "yes",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "YES"
+            },
+            {
+              "conditions": {
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.replyType }}",
+                    "rightValue": "no",
+                    "operator": { "type": "string", "operation": "equals" }
+                  }
+                ]
+              },
+              "renameOutput": true,
+              "outputKey": "NO"
+            }
+          ]
+        },
+        "fallbackOutput": "extra"
+      },
+      "id": "route-reply",
+      "name": "Route Reply",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gate.whapi.cloud/messages/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer REPLACE_WITH_WHAPI_TOKEN" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to", "value": "={{ $json.phone }}@s.whatsapp.net" },
+            { "name": "body", "value": "Great! Would you be willing to list your item on our buy and sell group? It would get a lot more visibility!" }
+          ]
+        }
+      },
+      "id": "send-listing-request",
+      "name": "Ask to List on Group",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [920, 160]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "listings",
+        "filters": {
+          "conditions": [
+            { "keyName": "phone", "condition": "eq", "keyValue": "={{ $json.phone }}" }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "interested" },
+            { "fieldId": "reply", "fieldValue": "yes" },
+            { "fieldId": "reply_received_at", "fieldValue": "={{ new Date().toISOString() }}" }
+          ]
+        }
+      },
+      "id": "update-interested",
+      "name": "Update - Interested",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [1140, 160]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "listings",
+        "filters": {
+          "conditions": [
+            { "keyName": "phone", "condition": "eq", "keyValue": "={{ $json.phone }}" }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "declined" },
+            { "fieldId": "reply", "fieldValue": "no" },
+            { "fieldId": "reply_received_at", "fieldValue": "={{ new Date().toISOString() }}" }
+          ]
+        }
+      },
+      "id": "update-declined",
+      "name": "Update - Declined",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [920, 320]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "tableId": "listings",
+        "filters": {
+          "conditions": [
+            { "keyName": "phone", "condition": "eq", "keyValue": "={{ $json.phone }}" }
+          ]
+        },
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "status", "fieldValue": "unknown_reply" },
+            { "fieldId": "reply", "fieldValue": "={{ $json.message }}" },
+            { "fieldId": "reply_received_at", "fieldValue": "={{ new Date().toISOString() }}" }
+          ]
+        }
+      },
+      "id": "update-unknown",
+      "name": "Update - Unknown",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [920, 460]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={ \"status\": \"ok\" }"
+      },
+      "id": "webhook-response",
+      "name": "Webhook Response",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1140, 400]
+    }
+  ],
+  "connections": {
+    "Whapi Reply Webhook": {
+      "main": [[{ "node": "Parse Reply", "type": "main", "index": 0 }]]
+    },
+    "Parse Reply": {
+      "main": [[{ "node": "Route Reply", "type": "main", "index": 0 }]]
+    },
+    "Route Reply": {
+      "main": [
+        [{ "node": "Ask to List on Group", "type": "main", "index": 0 }],
+        [{ "node": "Update - Declined", "type": "main", "index": 0 }],
+        [{ "node": "Update - Unknown", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ask to List on Group": {
+      "main": [[{ "node": "Update - Interested", "type": "main", "index": 0 }]]
+    },
+    "Update - Declined": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    },
+    "Update - Unknown": {
+      "main": [[{ "node": "Webhook Response", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Dubai",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
