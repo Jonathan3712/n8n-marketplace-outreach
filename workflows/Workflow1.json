@@ -1,0 +1,155 @@
+{
+  "name": "Workflow 1 - Dubizzle Monitor",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [{ "field": "hours", "hoursInterval": 1 }]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Every Hour",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [240, 300]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "REPLACE_WITH_SCRAPER_ENDPOINT",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "url", "value": "REPLACE_WITH_DUBIZZLE_URL" }
+          ]
+        },
+        "options": { "timeout": 60000 }
+      },
+      "id": "fetch-listings",
+      "name": "Fetch Listings",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst BUSINESS_KEYWORDS = [\n  'trading','trade','shop','store','mart',\n  'company','llc','ltd','enterprise',\n  'wholesale','supplier','dealer',\n  'new & used','buy & sell'\n];\n\nconst filtered = items.filter(item => {\n  const d = item.json;\n  if (!d.has_phone) return false;\n  if (d.is_verified_business) return false;\n  if (d.is_trusted_seller) return false;\n  if (d.business) return false;\n  const name = (d.name || '').toLowerCase();\n  if (BUSINESS_KEYWORDS.some(k => name.includes(k))) return false;\n  return true;\n});\n\nconsole.log(`Passed: ${filtered.length}/${items.length}`);\nreturn filtered;"
+      },
+      "id": "filter-listings",
+      "name": "Filter Business Sellers",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [680, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "leftValue": "={{ $json.has_phone }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "has-phone-check",
+      "name": "Has Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "listings",
+        "dataToSend": "defineBelow",
+        "fieldsUi": {
+          "fieldValues": [
+            { "fieldId": "listing_id", "fieldValue": "={{ $json.listing_id }}" },
+            { "fieldId": "name", "fieldValue": "={{ $json.name }}" },
+            { "fieldId": "price", "fieldValue": "={{ $json.price }}" },
+            { "fieldId": "url", "fieldValue": "={{ $json.url }}" },
+            { "fieldId": "has_phone", "fieldValue": "={{ $json.has_phone }}" },
+            { "fieldId": "status", "fieldValue": "pending_phone_extraction" },
+            { "fieldId": "follow_up_count", "fieldValue": "=0" },
+            { "fieldId": "created_at", "fieldValue": "={{ new Date().toISOString() }}" }
+          ]
+        }
+      },
+      "id": "insert-listing",
+      "name": "Save to n8n Table",
+      "type": "n8n-nodes-base.n8nTrainingCustomerDatastore",
+      "typeVersion": 1,
+      "position": [1120, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "console.log(`Skipped ${$input.all().length} listings`);\nreturn $input.all();"
+      },
+      "id": "log-skipped",
+      "name": "Log Skipped",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1120, 420]
+    },
+    {
+      "parameters": {},
+      "id": "error-trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [240, 520]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://gate.whapi.cloud/messages/text",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "=Bearer REPLACE_WITH_WHAPI_TOKEN" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "to", "value": "REPLACE_WITH_YOUR_NUMBER@s.whatsapp.net" },
+            { "name": "body", "value": "=❌ Dubizzle Monitor Error: {{ $json.message }}" }
+          ]
+        }
+      },
+      "id": "error-notification",
+      "name": "Notify Error",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [460, 520]
+    }
+  ],
+  "connections": {
+    "Every Hour": {
+      "main": [[{ "node": "Fetch Listings", "type": "main", "index": 0 }]]
+    },
+    "Fetch Listings": {
+      "main": [[{ "node": "Filter Business Sellers", "type": "main", "index": 0 }]]
+    },
+    "Filter Business Sellers": {
+      "main": [[{ "node": "Has Phone?", "type": "main", "index": 0 }]]
+    },
+    "Has Phone?": {
+      "main": [
+        [{ "node": "Save to n8n Table", "type": "main", "index": 0 }],
+        [{ "node": "Log Skipped", "type": "main", "index": 0 }]
+      ]
+    },
+    "Error Trigger": {
+      "main": [[{ "node": "Notify Error", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": {
+    "timezone": "Asia/Dubai",
+    "saveDataErrorExecution": "all",
+    "saveDataSuccessExecution": "all"
+  }
+}
